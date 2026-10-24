@@ -1,31 +1,19 @@
 import { getDeployStore, getStore } from '@netlify/blobs';
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { Credential, initialCredential, matchesCredential, createCredential, validNewPassword } from '../../server/admin-auth';
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' } });
-const store = () => process.env.CONTEXT === 'production'
-  ? getStore({ name: 'academy-reservations', consistency: 'strong' })
-  : getDeployStore({ name: 'academy-reservations', consistency: 'strong' });
-const adminStore = () => process.env.CONTEXT === 'production'
-  ? getStore({ name: 'academy-admin', consistency: 'strong' })
-  : getDeployStore({ name: 'academy-admin', consistency: 'strong' });
-type Credential = { salt: string; hash: string; updatedAt: string };
-const matchesCredential = (supplied: string, record: Credential) => {
-  if (!/^[a-f0-9]{32}$/.test(record.salt) || !/^[a-f0-9]{128}$/.test(record.hash)) return false;
-  const computed = scryptSync(supplied, Buffer.from(record.salt, 'hex'), 64);
-  return timingSafeEqual(computed, Buffer.from(record.hash, 'hex'));
-};
-const matchesEnvironment = (supplied: string) => {
-  const expected = process.env.ADMIN_PIN || '';
-  const provided = Buffer.from(supplied);
-  const original = Buffer.from(expected);
-  const categoryCount = Number(/[A-Za-z]/.test(expected)) + Number(/[0-9]/.test(expected)) + Number(/[\p{P}\p{S}]/u.test(expected));
-  return expected.length >= 8 && expected.length <= 128 && categoryCount >= 2 && provided.length === original.length && timingSafeEqual(provided, original);
-};
+// CONTEXT may be absent at Function runtime. Default to persistent site stores,
+// never a per-deploy store that loses password changes across production deploys.
+const persistentStore = (name: string) => process.env.CONTEXT && process.env.CONTEXT !== 'production'
+  ? getDeployStore({ name, consistency: 'strong' })
+  : getStore({ name, consistency: 'strong' });
+const store = () => persistentStore('academy-reservations');
+const adminStore = () => persistentStore('academy-admin');
 const validAdmin = async (request: Request) => {
   const supplied = request.headers.get('x-admin-pin') || '';
   if (supplied.length < 8 || supplied.length > 128) return false;
   const record = await adminStore().get('credential', { type: 'json' }) as Credential | null;
-  return record ? matchesCredential(supplied, record) : matchesEnvironment(supplied);
+  return matchesCredential(supplied, record ?? initialCredential);
 };
 const clean = (value: unknown, max: number) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const sameOrigin = (request: Request) => {
@@ -56,17 +44,15 @@ export default async (request: Request) => {
       const newPassword = body?.newPassword;
       if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') return json({ error: '현재 비밀번호와 새 비밀번호를 입력해 주세요.' }, 400);
       if (!(await validAdmin(new Request(request.url, { headers: { 'x-admin-pin': currentPassword } })))) return json({ error: '현재 비밀번호가 올바르지 않습니다.' }, 401);
-      const categoryCount = Number(/[A-Za-z]/.test(newPassword)) + Number(/[0-9]/.test(newPassword)) + Number(/[\p{P}\p{S}]/u.test(newPassword));
-      if (newPassword.length < 8 || newPassword.length > 128 || newPassword !== newPassword.trim() || newPassword === currentPassword || categoryCount < 2) {
+      if (!validNewPassword(newPassword) || newPassword === currentPassword) {
         return json({ error: '새 비밀번호는 8~128자이며 영문·숫자·특수문자 중 2종류 이상을 포함해야 합니다. 기존 비밀번호와 달라야 합니다.' }, 400);
       }
       const credentials = adminStore();
       const previous = await credentials.getWithMetadata('credential', { type: 'json' }) as { data: Credential; etag: string } | null;
-      if (previous ? !matchesCredential(currentPassword, previous.data) : !matchesEnvironment(currentPassword)) {
+      if (!matchesCredential(currentPassword, previous?.data ?? initialCredential)) {
         return json({ error: '비밀번호가 이미 변경되었습니다. 새로고침 후 다시 시도해 주세요.' }, 409);
       }
-      const salt = randomBytes(16).toString('hex');
-      const record: Credential = { salt, hash: scryptSync(newPassword, Buffer.from(salt, 'hex'), 64).toString('hex'), updatedAt: new Date().toISOString() };
+      const record = createCredential(newPassword);
       const { modified } = await credentials.setJSON('credential', record, previous ? { onlyIfMatch: previous.etag } : { onlyIfNew: true });
       if (!modified) return json({ error: '다른 변경이 먼저 저장되었습니다. 다시 시도해 주세요.' }, 409);
       const saved = await credentials.get('credential', { type: 'json' }) as Credential | null;
@@ -142,7 +128,7 @@ export default async (request: Request) => {
     return json({ error: 'Not found' }, 404);
   } catch (error) {
     console.error('Reservation API error', error instanceof Error ? error.message : 'unknown');
-    return json({ error: '접수 서비스에 오류가 발생했습니다. 전화 또는 카카오톡으로 문의해 주세요.' }, 503);
+    return json({ error: '서버 또는 저장소에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.' }, 503);
   }
 };
 

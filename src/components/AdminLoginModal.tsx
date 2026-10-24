@@ -40,19 +40,23 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
         body: JSON.stringify({ pin: trimmedPin }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.reservations)) {
-          sessionStorage.setItem('bigbang_admin_pin', trimmedPin);
-          sessionStorage.setItem('bb_admin_pin', trimmedPin);
-          sessionStorage.setItem('bigbang_admin_auth', 'true');
-          onLoginSuccess(data.reservations, trimmedPin);
-          onClose();
-          return;
-        }
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success && Array.isArray(data.reservations)) {
+        sessionStorage.setItem('bigbang_admin_pin', trimmedPin);
+        sessionStorage.setItem('bb_admin_pin', trimmedPin);
+        sessionStorage.setItem('bigbang_admin_auth', 'true');
+        onLoginSuccess(data.reservations, trimmedPin);
+        onClose();
+        return;
       }
 
-      setErrorMessage('관리자 인증에 실패했습니다. 비밀번호를 확인해 주세요.');
+      if (res.status === 401) {
+        setErrorMessage('관리자 비밀번호가 올바르지 않습니다. 변경한 적이 있다면 변경된 비밀번호를 입력해 주세요.');
+      } else if (res.status >= 500) {
+        setErrorMessage('관리자 서버 또는 저장소에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      } else {
+        setErrorMessage(data?.error || '로그인 요청을 처리하지 못했습니다. 관리자 API 배포 상태를 확인해 주세요.');
+      }
     } catch {
       setErrorMessage('관리자 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.');
     } finally {
