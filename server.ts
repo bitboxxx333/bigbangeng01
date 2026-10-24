@@ -1,6 +1,6 @@
 import express from "express";
 import path from "path";
-import { timingSafeEqual } from "node:crypto";
+import { initialCredential, matchesCredential, createCredential, validNewPassword } from "./server/admin-auth";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
@@ -574,14 +574,11 @@ ${conversationContext || '첫 대화 시작'}
   }
 });
 
-// Mutable Admin Password (defaults to process.env.ADMIN_PIN or "admin7525")
-let currentAdminPassword = process.env.ADMIN_PIN?.trim() || "admin7525";
+// Local development credential changes last for this process only.
+let currentAdminCredential = initialCredential;
 
-export function isValidAdminPin(inputPin: any): boolean {
-  if (typeof inputPin !== 'string') return false;
-  const candidate = inputPin.trim();
-  if (!candidate) return false;
-  return candidate === currentAdminPassword || candidate === "admin7525";
+export function isValidAdminPin(inputPin: unknown): boolean {
+  return typeof inputPin === 'string' && matchesCredential(inputPin.trim(), currentAdminCredential);
 }
 
 
@@ -836,10 +833,10 @@ app.post("/api/admin/change-password", (req, res) => {
     if (!isValidAdminPin(currentPassword)) {
       return res.status(401).json({ success: false, error: "현재 비밀번호가 일치하지 않습니다." });
     }
-    if (!newPassword || typeof newPassword !== 'string' || newPassword.trim().length < 4) {
+    if (!validNewPassword(newPassword) || newPassword === currentPassword) {
       return res.status(400).json({ success: false, error: "유효한 새 비밀번호를 입력해 주세요." });
     }
-    currentAdminPassword = newPassword.trim();
+    currentAdminCredential = createCredential(newPassword);
     return res.json({ success: true, message: "비밀번호가 성공적으로 변경되었습니다." });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: "비밀번호 변경 처리 중 오류가 발생했습니다." });

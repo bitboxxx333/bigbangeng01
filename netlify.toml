@@ -1,3 +1,11 @@
+[build]
+  command = "bunx --no-install vite build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  BUN_VERSION = "1.4.4"
+
 [[redirects]]
   from = "/api/reservations/:id/status"
   to = "/.netlify/functions/academy-api?route=status&id=:id"
