@@ -53,3 +53,14 @@
   to = "/.netlify/functions/academy-api?route=settings"
   status = 200
   force = true
+[[redirects]]
+  from = "/api/admin/email-settings"
+  to = "/.netlify/functions/academy-api?route=email-settings"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/admin/test-email"
+  to = "/.netlify/functions/academy-api?route=test-email"
+  status = 200
+  force = true

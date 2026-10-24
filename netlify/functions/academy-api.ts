@@ -1,3 +1,4 @@
+import { defaultEmailSettings, sendReservationEmail, EmailSettings } from '../../server/reservation-email';
 import { getDeployStore, getStore } from '@netlify/blobs';
 import { Credential, initialCredential, matchesCredential, createCredential, validNewPassword } from '../../server/admin-auth';
 
@@ -9,6 +10,7 @@ const persistentStore = (name: string) => process.env.CONTEXT && process.env.CON
   : getStore({ name, consistency: 'strong' });
 const store = () => persistentStore('academy-reservations');
 const adminStore = () => persistentStore('academy-admin');
+const loadEmailSettings = async (): Promise<EmailSettings> => ({ ...defaultEmailSettings, ...await adminStore().get('email-settings', { type: 'json' }) });
 const validAdmin = async (request: Request) => {
   const supplied = request.headers.get('x-admin-pin') || '';
   if (supplied.length < 8 || supplied.length > 128) return false;
@@ -26,9 +28,38 @@ export default async (request: Request) => {
     const url = new URL(request.url);
     const parts = url.pathname.split('/').filter(Boolean);
     const publicPath = parts[0] === 'api' ? parts.slice(1).join('/') : '';
-    const route = url.searchParams.get('route') || (publicPath === 'reservations' ? 'reservations' : publicPath === 'admin/verify' ? 'verify' : publicPath === 'admin/change-password' ? 'change-password' : publicPath === 'admin/settings' ? 'admin-settings' : publicPath === 'admin/test-notify' ? 'test-notify' : publicPath === 'settings' ? 'settings' : /^reservations\/[^/]+\/status$/.test(publicPath) ? 'status' : /^reservations\/[^/]+\/test$/.test(publicPath) ? 'delete-test' : '');
+    const route = url.searchParams.get('route') || (publicPath === 'admin/email-settings' ? 'email-settings' : publicPath === 'admin/test-email' ? 'test-email' : publicPath === 'reservations' ? 'reservations' : publicPath === 'admin/verify' ? 'verify' : publicPath === 'admin/change-password' ? 'change-password' : publicPath === 'admin/settings' ? 'admin-settings' : publicPath === 'admin/test-notify' ? 'test-notify' : publicPath === 'settings' ? 'settings' : /^reservations\/[^/]+\/status$/.test(publicPath) ? 'status' : /^reservations\/[^/]+\/test$/.test(publicPath) ? 'delete-test' : '');
     if (!route) return json({ error: 'Not found' }, 404);
     if (!sameOrigin(request)) return json({ error: '허용되지 않은 요청입니다.' }, 403);
+    if (route === 'email-settings' || route === 'test-email') {
+      if (!(await validAdmin(request))) return json({ error: '관리자 인증이 필요합니다.' }, 401);
+      if (route === 'email-settings' && request.method === 'GET') {
+        const settings = await loadEmailSettings();
+        return json({ recipientEmail: settings.recipientEmail, enabled: settings.enabled, configured: Boolean(settings.web3FormsKey) });
+      }
+      if (route === 'email-settings' && request.method === 'PATCH') {
+        const raw = await request.text();
+        if (raw.length > 2048) return json({ error: '입력 내용이 너무 깁니다.' }, 413);
+        const body = JSON.parse(raw);
+        const previous = await loadEmailSettings();
+        const recipientEmail = clean(body.recipientEmail, 254);
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail) || typeof body.enabled !== 'boolean') return json({ error: '이메일 주소와 알림 설정을 확인해 주세요.' }, 400);
+        const key = typeof body.web3FormsKey === 'string' ? body.web3FormsKey.trim() : '';
+        if (key && !/^[a-f0-9-]{36}$/i.test(key)) return json({ error: 'Web3Forms에서 발급받은 Access Key를 확인해 주세요.' }, 400);
+        if (recipientEmail !== previous.recipientEmail && previous.web3FormsKey && !key) return json({ error: '수신 주소를 바꾸려면 새 주소로 발급받은 Access Key도 입력해 주세요.' }, 400);
+        const settings = { recipientEmail, enabled: body.enabled, web3FormsKey: key || previous.web3FormsKey };
+        const { modified } = await adminStore().setJSON('email-settings', settings);
+        if (!modified) return json({ error: '이메일 설정을 저장하지 못했습니다.' }, 503);
+        const saved = await loadEmailSettings();
+        if (saved.recipientEmail !== settings.recipientEmail || saved.web3FormsKey !== settings.web3FormsKey || saved.enabled !== settings.enabled) return json({ error: '이메일 설정 저장을 확인하지 못했습니다.' }, 503);
+        return json({ success: true, configured: Boolean(saved.web3FormsKey) });
+      }
+      if (route === 'test-email' && request.method === 'POST') {
+        const result = await sendReservationEmail({ id: 'TEST-EMAIL', studentName: '메일 수신 테스트', parentPhone: '-', school: '-', grade: '-', preferredDate: '-', preferredTime: '-', concerns: [], createdAt: new Date().toISOString(), status: '접수완료' }, await loadEmailSettings());
+        return json({ success: result.status === 'accepted', ...result }, result.status === 'accepted' ? 200 : 503);
+      }
+      return json({ error: 'Method not allowed' }, 405);
+    }
     if (route === 'settings' && request.method === 'GET') return json({});
     if (route === 'admin-settings' || route === 'test-notify') {
       if (!(await validAdmin(request))) return json({ error: '관리자 인증이 필요합니다.' }, 401);
@@ -99,7 +130,25 @@ export default async (request: Request) => {
       if (!modified) return json({ error: '접수 저장에 실패했습니다. 다시 시도해 주세요.' }, 503);
       const persisted = await records.get(id, { type: 'json' });
       if (!persisted || persisted.id !== id) return json({ error: '접수 저장을 확인하지 못했습니다. 학원에 연락해 주세요.' }, 503);
-      return json({ reservation: persisted, notificationStatus: 'not_sent' }, 201);
+      // Reservation persistence is authoritative; notification failure never undoes it.
+      let emailNotification;
+      try {
+        emailNotification = await sendReservationEmail(persisted, await loadEmailSettings());
+      } catch {
+        emailNotification = { status: 'failed', message: '예약은 저장됐지만 이메일 설정을 읽지 못했습니다.' };
+      }
+      const updated = { ...persisted, emailNotification };
+      try {
+        const latest = await records.getWithMetadata(id, { type: 'json' });
+        if (latest) {
+          const { modified: savedStatus } = await records.setJSON(id, { ...latest.data, emailNotification }, { onlyIfMatch: latest.etag });
+          if (!savedStatus) console.error('Reservation changed before email status could be saved');
+        }
+      } catch {
+        // Do not report a saved booking as failed or cause a duplicate submission.
+        console.error('Could not persist reservation email status');
+      }
+      return json({ reservation: updated, notificationStatus: emailNotification.status }, 201);
     }
     if (route === 'status' && request.method === 'PATCH') {
       if (!(await validAdmin(request))) return json({ error: '관리자 인증이 필요합니다.' }, 401);

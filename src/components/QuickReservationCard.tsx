@@ -3,7 +3,7 @@ import { Send, CheckCircle2, Sparkles, School, Phone, User, MessageSquare, Messa
 import { Reservation } from '../types';
 import { ACADEMY_INFO } from '../data/schools';
 import { openKakaoConsultation, getDirectSmsUrl } from '../utils/kakaoShare';
-import { sendConsultationEmailNotification } from '../utils/emailNotification';
+import { createReservation } from '../utils/reservationApi';
 
 interface QuickReservationCardProps {
   onReservationComplete: (reservation: Reservation) => void;
@@ -131,72 +131,15 @@ export const QuickReservationCard: React.FC<QuickReservationCardProps> = ({
     const concerns = ['학교별 기출 정밀 진단 및 1:1 상담'];
 
     try {
-      let resolvedRes: Reservation;
-
-      try {
-        const response = await fetch('/api/reservations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            studentName: name.trim(),
-            parentPhone: phone.trim(),
-            school: finalSchool,
-            grade,
-            concerns,
-            notes: message.trim(),
-            preferredDate,
-            preferredTime,
-          }),
-        });
-
-        const contentType = response.headers.get('content-type');
-        if (response.ok && contentType && contentType.includes('application/json')) {
-          const data = await response.json();
-          if (data.reservation) {
-            resolvedRes = data.reservation;
-            if (data.kakaoOpenChatUrl) {
-              setOpenChatUrl(data.kakaoOpenChatUrl);
-            }
-          } else {
-            throw new Error('API fallback');
-          }
-        } else {
-          throw new Error('API fallback');
-        }
-      } catch {
-        // Fallback for Netlify static hosting
-        resolvedRes = {
-          id: `BB-REV-${Date.now().toString().slice(-6)}`,
-          studentName: name.trim(),
-          parentPhone: phone.trim(),
-          school: finalSchool,
-          grade,
-          concerns,
-          preferredDate,
-          preferredTime,
-          notes: message.trim(),
-          createdAt: new Date().toISOString(),
-          status: '접수완료',
-        };
-      }
-
-      // Automatically dispatch email notification to director (jsflying1001@gmail.com)
-      sendConsultationEmailNotification({
-        id: resolvedRes.id,
-        studentName: resolvedRes.studentName,
-        parentPhone: resolvedRes.parentPhone,
-        school: resolvedRes.school,
-        grade: resolvedRes.grade,
-        preferredDate: resolvedRes.preferredDate,
-        preferredTime: resolvedRes.preferredTime,
-        concerns: resolvedRes.concerns,
-        notes: resolvedRes.notes,
-      }).catch((e) => console.warn('Email notification error:', e));
+      const resolvedRes = await createReservation({
+        studentName: name.trim(), parentPhone: phone.trim(), school: finalSchool,
+        grade, concerns, notes: message.trim(), preferredDate, preferredTime,
+      });
 
       setSubmittedData(resolvedRes);
       onReservationComplete(resolvedRes);
     } catch (err: any) {
-      setError('접수 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+      setError(err instanceof Error ? err.message : '접수 처리 중 오류가 발생했습니다.');
     } finally {
       setIsSubmitting(false);
     }

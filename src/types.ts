@@ -40,6 +40,7 @@ export interface Reservation {
   notes?: string;
   createdAt: string;
   status: '접수완료' | '상담대기' | '확정';
+  emailNotification?: { status: 'accepted' | 'failed' | 'not_configured' | 'disabled'; message: string };
   kakaoNotified?: boolean;
   kakaoNotifyMessage?: string;
 }

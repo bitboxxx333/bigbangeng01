@@ -774,12 +774,10 @@ app.post("/api/admin/test-notify", async (req, res) => {
   });
 });
 
-// Email Notification Endpoint
-app.post("/api/admin/notify-email", (req, res) => {
-  const { recipient, subject } = req.body;
-  const targetEmail = recipient || 'jsflying1001@gmail.com';
-  console.log(`[Email Notification Log] To: ${targetEmail}, Subject: ${subject}`);
-  res.json({ success: true, message: `${targetEmail} 메일 큐 등록 완료` });
+// Email delivery is implemented by the deployed Netlify Function.
+// Never claim that logging an email constitutes delivery.
+app.post("/api/admin/notify-email", (_req, res) => {
+  res.status(501).json({ success: false, error: '로컬 서버의 이메일 발송은 연결되지 않았습니다.' });
 });
 
 // Reservations endpoints

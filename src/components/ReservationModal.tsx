@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TARGET_SCHOOLS, COMMON_CONCERNS, ACADEMY_INFO } from '../data/schools';
 import { Reservation, SchoolData } from '../types';
 import { openKakaoConsultation, getDirectSmsUrl, formatReservationText } from '../utils/kakaoShare';
-import { sendConsultationEmailNotification } from '../utils/emailNotification';
+import { createReservation } from '../utils/reservationApi';
 import { 
   X, 
   CalendarCheck, 
@@ -173,70 +173,19 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
     }
 
     setIsSubmitting(true);
-    let resolvedRes: Reservation | null = null;
-
     try {
-      const response = await fetch('/api/reservations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentName: studentName.trim(),
-          parentPhone: parentPhone.trim(),
-          school: finalSchoolName,
-          grade: selectedGrade,
-          concerns: selectedConcerns,
-          preferredDate,
-          preferredTime,
-          notes: notes.trim(),
-        }),
+      const resolvedRes = await createReservation({
+        studentName: studentName.trim(), parentPhone: parentPhone.trim(),
+        school: finalSchoolName, grade: selectedGrade, concerns: selectedConcerns,
+        preferredDate, preferredTime, notes: notes.trim(),
       });
-
-      const contentType = response.headers.get('content-type');
-      if (response.ok && contentType && contentType.includes('application/json')) {
-        const data = await response.json();
-        if (data && data.reservation) {
-          resolvedRes = data.reservation;
-          if (data.kakaoOpenChatUrl) {
-            setKakaoOpenChatUrl(data.kakaoOpenChatUrl);
-          }
-        }
-      }
-    } catch {
-      // static fallback
+      setConfirmedReservation(resolvedRes);
+      onReservationComplete(resolvedRes);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : '예약 저장을 확인하지 못했습니다.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    if (!resolvedRes) {
-      resolvedRes = {
-        id: `BB-REV-${Date.now().toString().slice(-6)}`,
-        studentName: studentName.trim(),
-        parentPhone: parentPhone.trim(),
-        school: finalSchoolName,
-        grade: selectedGrade,
-        concerns: selectedConcerns,
-        preferredDate,
-        preferredTime,
-        notes: notes.trim(),
-        createdAt: new Date().toISOString(),
-        status: '접수완료',
-      };
-    }
-
-    // Automatically dispatch email notification to director (jsflying1001@gmail.com)
-    sendConsultationEmailNotification({
-      id: resolvedRes.id,
-      studentName: resolvedRes.studentName,
-      parentPhone: resolvedRes.parentPhone,
-      school: resolvedRes.school,
-      grade: resolvedRes.grade,
-      preferredDate: resolvedRes.preferredDate,
-      preferredTime: resolvedRes.preferredTime,
-      concerns: resolvedRes.concerns,
-      notes: resolvedRes.notes,
-    }).catch((e) => console.warn('Email notification error:', e));
-
-    setConfirmedReservation(resolvedRes);
-    onReservationComplete(resolvedRes);
-    setIsSubmitting(false);
   };
 
   const handleCopyTicket = () => {

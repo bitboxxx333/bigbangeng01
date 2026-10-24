@@ -40,7 +40,7 @@ export default function App() {
   const [isReservationModalOpen, setIsReservationModalOpen] = useState(false);
   const [isAdminDrawerOpen, setIsAdminDrawerOpen] = useState(false);
   const [reservations, setReservations] = useState<Reservation[]>([]);
-  const [reservationCount, setReservationCount] = useState<number>(3);
+  const [reservationCount, setReservationCount] = useState<number>(0);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     return sessionStorage.getItem('bigbang_admin_auth') === 'true';
   });
@@ -284,21 +284,12 @@ export default function App() {
     setReservationCount((prev) => prev + 1);
     setReservations((prev) => [newRes, ...prev.filter((r) => r.id !== newRes.id)]);
     
-    // Store in localStorage for Netlify static hosting persistence
-    try {
-      const stored = JSON.parse(localStorage.getItem('bigbang_reservations') || '[]');
-      const updated = [newRes, ...stored.filter((r: any) => r.id !== newRes.id)];
-      localStorage.setItem('bigbang_reservations', JSON.stringify(updated));
-    } catch {
-      // ignore
-    }
-
     setCurrentStage(4);
 
     const confirmMessage: ChatMessage = {
       id: `ai-confirmed-${Date.now()}`,
       sender: 'ai',
-      text: `🎉 **${newRes.studentName} 학생의 무료 레벨테스트 예약이 접수되었습니다!**\n\n- 예약 번호: ${newRes.id}\n- 학교/학년: ${newRes.school} ${newRes.grade}\n- 연락처: ${newRes.parentPhone}\n\n상담실장이 접수 확인 후 안내 문자를 발송해 드립니다. 시험지나 평소 풀던 교재를 지참해 주세요! 😊`,
+      text: `🎉 **${newRes.studentName} 학생의 무료 레벨테스트 예약이 접수되었습니다!**\n\n- 예약 번호: ${newRes.id}\n- 학교/학년: ${newRes.school} ${newRes.grade}\n- 연락처: ${newRes.parentPhone}\n\n학원에서 접수 내역을 확인한 뒤 연락드립니다. 시험지나 평소 풀던 교재를 지참해 주세요! 😊`,
       timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
       stage: 4,
     };
@@ -310,23 +301,9 @@ export default function App() {
     sessionStorage.setItem('bigbang_admin_pin', pin);
     setIsAdminAuthenticated(true);
     
-    // Merge server reservations with local Netlify reservations
-    let combined = [...unlockedReservations];
-    try {
-      const localStored = JSON.parse(localStorage.getItem('bigbang_reservations') || '[]');
-      if (Array.isArray(localStored)) {
-        for (const localRes of localStored) {
-          if (!combined.some((r) => r.id === localRes.id)) {
-            combined.push(localRes);
-          }
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    setReservations(combined);
-    setReservationCount(combined.length);
+    // Only server-confirmed bookings belong in the shared reservation ledger.
+    setReservations(unlockedReservations);
+    setReservationCount(unlockedReservations.length);
     setCurrentView('admin'); // Screen transitions to Admin Dashboard!
   };
 

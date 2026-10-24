@@ -71,10 +71,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [recipientEmail, setRecipientEmail] = useState(DEFAULT_DIRECTOR_EMAIL);
   const [web3FormsKey, setWeb3FormsKey] = useState('');
   const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(true);
+  const [emailConfigured, setEmailConfigured] = useState(false);
+  const [isSavingEmail, setIsSavingEmail] = useState(false);
+  const [emailSettingsFeedback, setEmailSettingsFeedback] = useState('');
   const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
   const [testEmailFeedback, setTestEmailFeedback] = useState('');
 
-  const activePin = sessionStorage.getItem('bigbang_admin_pin') || '7525';
+  const activePin = sessionStorage.getItem('bigbang_admin_pin') || '';
 
   useEffect(() => {
     fetch('/api/admin/settings', {
@@ -99,11 +102,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       })
       .catch(() => {});
 
-    // Load client-side email settings
-    const emailConfig = getEmailSettings();
-    if (emailConfig.recipientEmail) setRecipientEmail(emailConfig.recipientEmail);
-    if (emailConfig.web3FormsKey) setWeb3FormsKey(emailConfig.web3FormsKey);
-    setEmailAlertsEnabled(emailConfig.enabled);
+    getEmailSettings(activePin).then((settings) => {
+      setRecipientEmail(settings.recipientEmail);
+      setEmailAlertsEnabled(settings.enabled);
+      setEmailConfigured(Boolean(settings.configured));
+    }).catch((error) => setEmailSettingsFeedback(error.message));
   }, [activePin]);
 
   // Filtered reservations
@@ -179,13 +182,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     setIsSavingSettings(true);
     setSettingsSaveMsg('');
 
-    // Save email notification settings locally for Netlify
-    saveEmailSettings({
-      recipientEmail: recipientEmail.trim(),
-      web3FormsKey: web3FormsKey.trim(),
-      enabled: emailAlertsEnabled,
-    });
-
     try {
       const res = await fetch('/api/admin/settings', {
         method: 'PATCH',
@@ -206,26 +202,39 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         }),
       });
 
-      const data = await res.json().catch(() => ({ success: true }));
-      setSettingsSaveMsg('알림 및 학원 설정(이메일·오픈채팅)이 성공적으로 저장되었습니다!');
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) throw new Error(data?.error || '설정을 저장하지 못했습니다.');
+      setSettingsSaveMsg('학원 설정이 저장되었습니다. 이메일 설정은 위의 이메일 설정 저장 버튼을 이용해 주세요.');
       setTimeout(() => setSettingsSaveMsg(''), 4000);
-    } catch {
-      // Even if server is offline on Netlify, local settings are saved
-      setSettingsSaveMsg('이메일 및 학원 설정이 로컬 브라우저에 안전하게 저장되었습니다!');
+    } catch (error) {
+      setSettingsSaveMsg(error instanceof Error ? error.message : '서버에 설정을 저장하지 못했습니다.');
       setTimeout(() => setSettingsSaveMsg(''), 4000);
     } finally {
       setIsSavingSettings(false);
     }
   };
 
+  const handleSaveEmailSettings = async () => {
+    setIsSavingEmail(true);
+    setEmailSettingsFeedback('');
+    try {
+      const result = await saveEmailSettings({ recipientEmail: recipientEmail.trim(), web3FormsKey: web3FormsKey.trim(), enabled: emailAlertsEnabled }, activePin);
+      setEmailConfigured(result.configured);
+      setWeb3FormsKey('');
+      setEmailSettingsFeedback(result.configured ? '이메일 설정이 서버에 저장되었습니다. 테스트 발송으로 수신을 확인해 주세요.' : '수신 주소가 저장되었습니다. 실제 발송에는 해당 주소로 발급받은 Access Key가 필요합니다.');
+    } catch (error) {
+      setEmailSettingsFeedback(error instanceof Error ? error.message : '이메일 설정을 저장하지 못했습니다.');
+    } finally { setIsSavingEmail(false); }
+  };
+
   const handleSendTestEmailNotification = async () => {
     setIsSendingTestEmail(true);
     setTestEmailFeedback('');
     try {
-      const res = await sendTestEmail(recipientEmail);
+      const res = await sendTestEmail(activePin);
       setTestEmailFeedback(res.message || `${recipientEmail}로 테스트 이메일이 발송되었습니다.`);
-    } catch {
-      setTestEmailFeedback('이메일 발송 중 오류가 발생했습니다.');
+    } catch (error) {
+      setTestEmailFeedback(error instanceof Error ? error.message : '이메일 발송 요청이 실패했습니다.');
     } finally {
       setIsSendingTestEmail(false);
       setTimeout(() => setTestEmailFeedback(''), 6000);
@@ -520,6 +529,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                 메모: {r.notes}
                               </div>
                             )}
+                            <div className="text-[10px] text-slate-600 mt-1" title={r.emailNotification?.message}>
+                              메일: {r.emailNotification ? ({ accepted: '발송 요청 접수', failed: '발송 실패', not_configured: '미설정', disabled: '알림 꺼짐' }[r.emailNotification.status]) : '발송 기록 없음'}
+                            </div>
                           </td>
                           <td className="py-3 px-4">
                             {onUpdateStatus ? (
@@ -701,7 +713,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       상담 접수 실시간 이메일 수신 ({recipientEmail})
                     </h4>
                     <p className="text-xs text-slate-500">
-                      Netlify 무서버(Serverless) 환경에서 별도 서버 없이도 안정적으로 발송됩니다.
+                      예약을 서버에 저장한 뒤, 저장된 메일 설정으로 발송을 요청합니다.
                     </p>
                   </div>
                 </div>
@@ -709,7 +721,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 <button
                   type="button"
                   onClick={handleSendTestEmailNotification}
-                  disabled={isSendingTestEmail}
+                  disabled={isSendingTestEmail || !emailConfigured}
                   className="py-2 px-3.5 bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50 active:scale-95"
                 >
                   <Send className="w-3.5 h-3.5 text-amber-300" />
@@ -718,7 +730,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </div>
 
               {testEmailFeedback && (
-                <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold rounded-xl flex items-center gap-2">
+                <div className="p-3 bg-blue-50 border border-blue-300 text-blue-800 text-xs font-bold rounded-xl flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>{testEmailFeedback}</span>
                 </div>
@@ -741,7 +753,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-slate-700 block">
-                      Web3Forms 무료 Access Key (선택)
+                      Web3Forms Access Key (메일 발송 시 필수)
                     </label>
                     <a
                       href="https://web3forms.com/#start"
@@ -754,18 +766,21 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     </a>
                   </div>
                   <input
-                    type="text"
+                    type="password"
                     value={web3FormsKey}
                     onChange={(e) => setWeb3FormsKey(e.target.value)}
-                    placeholder="미입력 시 Netlify Forms로 자동 전송"
+                    placeholder={emailConfigured ? "저장된 키 있음 · 변경할 때만 입력" : "수신 이메일로 발급받은 키 입력"}
                     className="w-full px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-mono bg-white focus:outline-hidden focus:ring-2 focus:ring-[#122B49]"
                   />
                 </div>
               </div>
 
               <div className="text-[11px] text-slate-500 bg-white/70 p-2.5 rounded-xl border border-slate-200 leading-relaxed">
-                📌 <strong>Netlify 배포 자동 연동</strong>: Netlify 대시보드(Site settings &gt; Forms &gt; Form notifications)에서 이메일을 <code>jsflying1001@gmail.com</code>으로 지정하시거나, Web3Forms Access Key를 입력하시면 학부모 접수 즉시 메일이 도착합니다.
+                수신할 이메일 주소로 Web3Forms Access Key를 발급받아 저장해 주세요. 실제 수신처는 키를 발급받은 주소입니다. 주소만 입력해서는 발송되지 않습니다. 설정 저장 후 테스트 발송으로 수신을 확인하세요.
               </div>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={emailAlertsEnabled} onChange={e => setEmailAlertsEnabled(e.target.checked)} />이메일 알림 사용</label>
+              <button type="button" onClick={handleSaveEmailSettings} disabled={isSavingEmail} className="px-4 py-2 bg-blue-700 text-white rounded-xl text-sm disabled:opacity-50">{isSavingEmail ? '저장 중...' : '이메일 설정 저장'}</button>
+              <p role="status" className="text-xs text-slate-700">{emailSettingsFeedback || (emailConfigured ? 'Access Key가 서버에 저장돼 있습니다.' : 'Access Key 미설정 · 예약 저장은 가능하지만 메일은 발송되지 않습니다.')}</p>
             </div>
 
             {/* Test Notification Push Button */}
@@ -864,7 +879,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </div>
 
               {settingsSaveMsg && (
-                <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-800 font-bold text-xs rounded-xl flex items-center gap-2">
+                <div className="p-3 bg-blue-50 border border-blue-300 text-blue-800 font-bold text-xs rounded-xl flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>{settingsSaveMsg}</span>
                 </div>
