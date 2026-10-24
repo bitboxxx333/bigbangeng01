@@ -1,0 +1,7 @@
+{
+  "name": "빅뱅영어학원 | 만수동 내신·수능 1등급 AI 맞춤형 영어전문",
+  "description": "동인천고·숭덕여고·문일여고·만수고 등 만수동 11개교 내신 1등급 밀착 관리. 1:1 정밀 진단 및 무료 레벨테스트 신청.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
