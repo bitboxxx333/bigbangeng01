@@ -574,14 +574,14 @@ ${conversationContext || '첫 대화 시작'}
   }
 });
 
-// Mutable Admin Password (defaults to process.env.ADMIN_PIN or "7525")
-let currentAdminPassword = process.env.ADMIN_PIN?.trim() || "7525";
+// Mutable Admin Password (defaults to process.env.ADMIN_PIN or "admin7525")
+let currentAdminPassword = process.env.ADMIN_PIN?.trim() || "admin7525";
 
 export function isValidAdminPin(inputPin: any): boolean {
   if (typeof inputPin !== 'string') return false;
   const candidate = inputPin.trim();
   if (!candidate) return false;
-  return candidate === currentAdminPassword || candidate === "7525";
+  return candidate === currentAdminPassword || candidate === "admin7525";
 }
 
 
