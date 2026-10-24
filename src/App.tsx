@@ -447,6 +447,8 @@ export default function App() {
             <HeroSection
               onOpenReservationModal={() => {
                 setSelectedSchool(undefined);
+                setSelectedGrade('');
+                setSelectedConcerns([]);
                 setIsReservationModalOpen(true);
               }}
               onOpenAIChat={() => setIsAIChatModalOpen(true)}
@@ -473,6 +475,8 @@ export default function App() {
               onOpenAIChat={() => setIsAIChatModalOpen(true)}
               onOpenReservation={() => {
                 setSelectedSchool(undefined);
+                setSelectedGrade('');
+                setSelectedConcerns([]);
                 setIsReservationModalOpen(true);
               }}
             />

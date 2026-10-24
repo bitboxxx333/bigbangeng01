@@ -29,12 +29,12 @@ export const QuickReservationCard: React.FC<QuickReservationCardProps> = ({
   const [customSchool, setCustomSchool] = useState('');
   const [grade, setGrade] = useState(() => {
     if (prefilledGrade) return prefilledGrade;
-    return '고1';
+    return '';
   });
   const [isPrep2027Mode, setIsPrep2027Mode] = useState(false);
   const [message, setMessage] = useState(() => {
     if (prefilledConcern) return prefilledConcern;
-    return '학교별 기출 분석 및 1:1 학습 진단 상담 신청합니다.';
+    return '';
   });
   const [privacyAgreed, setPrivacyAgreed] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -495,9 +495,7 @@ export const QuickReservationCard: React.FC<QuickReservationCardProps> = ({
                   }}
                   className="w-full px-2.5 py-2.5 bg-slate-50 border border-slate-300 focus:border-[#122B49] focus:bg-white rounded-lg text-xs sm:text-sm transition focus:outline-hidden font-medium text-[#122B49] font-bold"
                 >
-                  {showPrep2027 && (
-                    <option value="2027 예비고1 (현 중3)">🔥 2027 예비고1 (현 중3)</option>
-                  )}
+                  <option value="">학년 선택</option>
                   <option value="고1">고1</option>
                   <option value="고2">고2</option>
                   <option value="고3">고3</option>
@@ -505,6 +503,9 @@ export const QuickReservationCard: React.FC<QuickReservationCardProps> = ({
                   <option value="중2">중2</option>
                   <option value="중1">중1</option>
                   <option value="초등 고학년">초등부</option>
+                  {showPrep2027 && (
+                    <option value="2027 예비고1 (현 중3)">🔥 2027 예비고1 (현 중3)</option>
+                  )}
                 </select>
               </div>
             </div>

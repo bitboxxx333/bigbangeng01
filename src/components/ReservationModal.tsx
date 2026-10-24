@@ -47,7 +47,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
   const [parentPhone, setParentPhone] = useState('');
   const [selectedSchool, setSelectedSchool] = useState(defaultSchool?.name || '');
   const [customSchoolName, setCustomSchoolName] = useState('');
-  const [selectedGrade, setSelectedGrade] = useState(defaultGrade || '고1');
+  const [selectedGrade, setSelectedGrade] = useState(defaultGrade || '');
   const [selectedConcerns, setSelectedConcerns] = useState<string[]>(
     defaultConcerns && defaultConcerns.length > 0 ? defaultConcerns : []
   );
@@ -89,7 +89,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
     if (defaultGrade) {
       setSelectedGrade(defaultGrade);
     } else {
-      setSelectedGrade('고1');
+      setSelectedGrade('');
     }
 
     if (defaultSchool?.name) {
@@ -550,17 +550,19 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
                     value={selectedGrade}
                     onChange={(e) => setSelectedGrade(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-hidden focus:ring-2 focus:ring-blue-600 bg-white font-bold text-[#122B49]"
+                    required
                   >
+                    <option value="">학년 선택</option>
+                    <option value="고1">고등학교 1학년</option>
+                    <option value="고2">고등학교 2학년</option>
+                    <option value="고3">고등학교 3학년</option>
+                    <option value="중1">중학교 1학년</option>
+                    <option value="중2">중학교 2학년</option>
+                    <option value="중3">중학교 3학년</option>
+                    <option value="초등">초등 고학년</option>
                     {showPrep2027 && (
                       <option value="2027 예비고1 (현 중3)">🔥 2027 예비고1 (현 중3)</option>
                     )}
-                    <option value="고3">고등학교 3학년</option>
-                    <option value="고2">고등학교 2학년</option>
-                    <option value="고1">고등학교 1학년</option>
-                    <option value="중3">중학교 3학년</option>
-                    <option value="중2">중학교 2학년</option>
-                    <option value="중1">중학교 1학년</option>
-                    <option value="초등">초등 고학년</option>
                   </select>
                 </div>
               </div>
